@@ -1,45 +1,36 @@
 const t = require('tap')
-const tmock = require('../../fixtures/tmock')
 
 let readOpts = null
 let readResult = null
-const read = async (opts) => {
+const read = (opts, cb) => {
   readOpts = opts
-  return readResult
+  return cb(null, readResult)
+}
+
+const npmlog = {
+  clearProgress: () => {},
+  showProgress: () => {},
 }
 
 const npmUserValidate = {
   username: (username) => {
-    if (username === 'invalid') {
+    if (username === 'invalid')
       return new Error('invalid username')
-    }
 
     return null
   },
   email: (email) => {
-    if (email.startsWith('invalid')) {
+    if (email.startsWith('invalid'))
       return new Error('invalid email')
-    }
 
     return null
   },
 }
 
-let logMsg = null
-const readUserInfo = tmock(t, '{LIB}/utils/read-user-info.js', {
+const readUserInfo = t.mock('../../../lib/utils/read-user-info.js', {
   read,
-  npmlog: {
-    clearProgress: () => {},
-    showProgress: () => {},
-  },
-  'proc-log': {
-    warn: (msg) => logMsg = msg,
-  },
+  npmlog,
   'npm-user-validate': npmUserValidate,
-})
-
-t.beforeEach(() => {
-  logMsg = null
 })
 
 t.test('otp', async (t) => {
@@ -82,7 +73,11 @@ t.test('username - invalid warns and retries', async (t) => {
     readOpts = null
   })
 
-  const pResult = readUserInfo.username(null, null)
+  let logMsg
+  const log = {
+    warn: (msg) => logMsg = msg,
+  }
+  const pResult = readUserInfo.username(null, null, { log })
   // have to swap it to a valid username after execution starts
   // or it will loop forever
   readResult = 'valid'
@@ -108,7 +103,11 @@ t.test('email - invalid warns and retries', async (t) => {
     readOpts = null
   })
 
-  const pResult = readUserInfo.email(null, null)
+  let logMsg
+  const log = {
+    warn: (msg) => logMsg = msg,
+  }
+  const pResult = readUserInfo.email(null, null, { log })
   readResult = 'foo@bar.baz'
   const result = await pResult
   t.equal(result, 'foo@bar.baz', 'received the email')

@@ -1,6 +1,31 @@
+const { resolve } = require('path')
 const t = require('tap')
-const installedDeep = require('../../../../lib/utils/completion/installed-deep.js')
-const mockNpm = require('../../../fixtures/mock-npm')
+
+let prefix
+let globalDir = 'MISSING_GLOBAL_DIR'
+const _flatOptions = {
+  depth: Infinity,
+  global: false,
+  get prefix () {
+    return prefix
+  },
+}
+const p = '../../../../lib/utils/completion/installed-deep.js'
+const installedDeep = require(p)
+const npm = {
+  flatOptions: _flatOptions,
+  get prefix () {
+    return _flatOptions.prefix
+  },
+  get globalDir () {
+    return globalDir
+  },
+  config: {
+    get (key) {
+      return _flatOptions[key]
+    },
+  },
+}
 
 const fixture = {
   'package.json': JSON.stringify({
@@ -127,23 +152,16 @@ const globalFixture = {
   },
 }
 
-const mockDeep = async (t, config) => {
-  const mock = await mockNpm(t, {
-    prefixDir: fixture,
-    globalPrefixDir: globalFixture,
-    config: {
-      depth: Infinity,
-      ...config,
-    },
+t.test('get list of package names', async t => {
+  const fix = t.testdir({
+    local: fixture,
+    global: globalFixture,
   })
 
-  const res = await installedDeep(mock.npm)
+  prefix = resolve(fix, 'local')
+  globalDir = resolve(fix, 'global/node_modules')
 
-  return res
-}
-
-t.test('get list of package names', async t => {
-  const res = await mockDeep(t)
+  const res = await installedDeep(npm, null)
   t.same(
     res,
     [
@@ -160,7 +178,17 @@ t.test('get list of package names', async t => {
 })
 
 t.test('get list of package names as global', async t => {
-  const res = await mockDeep(t, { global: true })
+  const fix = t.testdir({
+    local: fixture,
+    global: globalFixture,
+  })
+
+  prefix = resolve(fix, 'local')
+  globalDir = resolve(fix, 'global/node_modules')
+
+  _flatOptions.global = true
+
+  const res = await installedDeep(npm, null)
   t.same(
     res,
     [
@@ -170,10 +198,22 @@ t.test('get list of package names as global', async t => {
     ],
     'should return list of global packages with no extra flags'
   )
+  _flatOptions.global = false
+  t.end()
 })
 
 t.test('limit depth', async t => {
-  const res = await mockDeep(t, { depth: 0 })
+  const fix = t.testdir({
+    local: fixture,
+    global: globalFixture,
+  })
+
+  prefix = resolve(fix, 'local')
+  globalDir = resolve(fix, 'global/node_modules')
+
+  _flatOptions.depth = 0
+
+  const res = await installedDeep(npm, null)
   t.same(
     res,
     [
@@ -188,10 +228,23 @@ t.test('limit depth', async t => {
     ],
     'should print only packages up to the specified depth'
   )
+  _flatOptions.depth = 0
+  t.end()
 })
 
 t.test('limit depth as global', async t => {
-  const res = await mockDeep(t, { depth: 0, global: true })
+  const fix = t.testdir({
+    local: fixture,
+    global: globalFixture,
+  })
+
+  prefix = resolve(fix, 'local')
+  globalDir = resolve(fix, 'global/node_modules')
+
+  _flatOptions.global = true
+  _flatOptions.depth = 0
+
+  const res = await installedDeep(npm, null)
   t.same(
     res,
     [
@@ -202,4 +255,7 @@ t.test('limit depth as global', async t => {
     ],
     'should reorder so that packages above that level depth goes last'
   )
+  _flatOptions.global = false
+  _flatOptions.depth = 0
+  t.end()
 })

@@ -1,47 +1,35 @@
 const t = require('tap')
-const mockLogs = require('../../fixtures/mock-logs')
-const mockNpm = require('../../fixtures/mock-npm')
-const tmock = require('../../fixtures/tmock')
 
-const auditError = async (t, { command, error, ...config } = {}) => {
-  const { logs, logMocks } = mockLogs()
-  const mockAuditError = tmock(t, '{LIB}/utils/audit-error', logMocks)
+const LOGS = []
+const OUTPUT = []
+const output = (...msg) => OUTPUT.push(msg)
+const auditError = require('../../../lib/utils/audit-error.js')
 
-  const mock = await mockNpm(t, {
-    command,
-    config,
-    exec: true,
-    prefixDir: { 'package.json': '{}', 'package-lock.json': '{}' },
-  })
-
-  const res = {}
-  try {
-    res.result = mockAuditError(mock.npm, error ? { error } : {})
-  } catch (err) {
-    res.error = err
-  }
-
-  return {
-    ...res,
-    logs: logs.warn.filter((l) => l[0] === 'audit'),
-    output: mock.joinedOutput(),
-  }
+const npm = {
+  command: null,
+  flatOptions: {},
+  log: {
+    warn: (...msg) => LOGS.push(msg),
+  },
+  output,
 }
-
-t.test('no error, not audit command', async t => {
-  const { result, error, logs, output } = await auditError(t, { command: 'install' })
-
-  t.equal(result, false, 'no error')
-  t.notOk(error, 'no error')
-
-  t.match(output.trim(), /up to date/, 'install output')
-  t.match(output.trim(), /found 0 vulnerabilities/, 'install output')
-  t.strictSame(logs, [], 'no warnings')
+t.afterEach(() => {
+  npm.flatOptions = {}
+  OUTPUT.length = 0
+  LOGS.length = 0
 })
 
-t.test('error, not audit command', async t => {
-  const { result, error, logs, output } = await auditError(t, {
-    command: 'install',
+t.test('no error, not audit command', t => {
+  npm.command = 'install'
+  t.equal(auditError(npm, {}), false, 'no error')
+  t.strictSame(OUTPUT, [], 'no output')
+  t.strictSame(LOGS, [], 'no warnings')
+  t.end()
+})
+
+t.test('error, not audit command', t => {
+  npm.command = 'install'
+  t.equal(auditError(npm, {
     error: {
       message: 'message',
       body: Buffer.from('body'),
@@ -52,21 +40,19 @@ t.test('error, not audit command', async t => {
       },
       statusCode: '420',
     },
-  })
-
-  t.equal(result, true, 'had error')
-  t.notOk(error, 'no error')
-  t.match(output.trim(), /up to date/, 'install output')
-  t.match(output.trim(), /found 0 vulnerabilities/, 'install output')
-  t.strictSame(logs, [], 'no warnings')
+  }), true, 'had error')
+  t.strictSame(OUTPUT, [], 'no output')
+  t.strictSame(LOGS, [], 'no warnings')
+  t.end()
 })
 
-t.test('error, audit command, not json', async t => {
-  const { result, error, logs, output } = await auditError(t, {
-    command: 'audit',
+t.test('error, audit command, not json', t => {
+  npm.command = 'audit'
+  npm.flatOptions.json = false
+  t.throws(() => auditError(npm, {
     error: {
       message: 'message',
-      body: Buffer.from('body error text'),
+      body: Buffer.from('body'),
       method: 'POST',
       uri: 'https://example.com/not/a/registry',
       headers: {
@@ -74,48 +60,47 @@ t.test('error, audit command, not json', async t => {
       },
       statusCode: '420',
     },
-  })
+  }))
 
-  t.equal(result, undefined)
-
-  t.ok(error, 'throws error')
-  t.match(output, 'body error text', 'some output')
-  t.strictSame(logs, [['audit', 'message']], 'some warnings')
+  t.strictSame(OUTPUT, [['body']], 'some output')
+  t.strictSame(LOGS, [['audit', 'message']], 'some warnings')
+  t.end()
 })
 
-t.test('error, audit command, json', async t => {
-  const { result, error, logs, output } = await auditError(t, {
-    json: true,
-    command: 'audit',
+t.test('error, audit command, json', t => {
+  npm.command = 'audit'
+  npm.flatOptions.json = true
+  t.throws(() => auditError(npm, {
     error: {
       message: 'message',
       body: { response: 'body' },
       method: 'POST',
-      uri: 'https://username:password@example.com/not/a/registry',
+      uri: 'https://example.com/not/a/registry',
       headers: {
         head: ['ers'],
       },
       statusCode: '420',
     },
-  })
+  }))
 
-  t.equal(result, undefined)
-  t.ok(error, 'throws error')
-  t.match(output,
-    '{\n' +
-      '  "message": "message",\n' +
-      '  "method": "POST",\n' +
-      '  "uri": "https://username:***@example.com/not/a/registry",\n' +
-      '  "headers": {\n' +
-      '    "head": [\n' +
-      '      "ers"\n' +
-      '    ]\n' +
-      '  },\n' +
-      '  "statusCode": "420",\n' +
-      '  "body": {\n' +
-      '    "response": "body"\n' +
-      '  }\n' +
-      '}'
-    , 'some output')
-  t.strictSame(logs, [['audit', 'message']], 'some warnings')
+  t.strictSame(OUTPUT, [
+    [
+      '{\n' +
+        '  "message": "message",\n' +
+        '  "method": "POST",\n' +
+        '  "uri": "https://example.com/not/a/registry",\n' +
+        '  "headers": {\n' +
+        '    "head": [\n' +
+        '      "ers"\n' +
+        '    ]\n' +
+        '  },\n' +
+        '  "statusCode": "420",\n' +
+        '  "body": {\n' +
+        '    "response": "body"\n' +
+        '  }\n' +
+        '}',
+    ],
+  ], 'some output')
+  t.strictSame(LOGS, [['audit', 'message']], 'some warnings')
+  t.end()
 })
